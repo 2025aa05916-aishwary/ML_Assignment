@@ -1,9 +1,9 @@
-# requirements.txt (Python 3.12 compatible)
 streamlit==1.40.1
 numpy==2.2.2
-pandas==2.2.1
+pandas==2.3.0
 matplotlib==3.8.2
 seaborn==0.13.2
 lightgbm==4.3.0
 plotly==5.18.0
 scipy==1.12.0
+
