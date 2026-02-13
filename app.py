@@ -1,7 +1,6 @@
 # app.py
 import os
 from typing import Optional
-import io
 
 import numpy as np
 import pandas as pd
@@ -63,12 +62,12 @@ if b2:
         data=b2, file_name="test_data_with_target.csv", mime="text/csv", use_container_width=True
     )
 
-# ---------- Optional user test CSV upload ----------
-uploaded = st.file_uploader(
-    "Upload CSV to use as **test** data.\n"
-    "- If you include a `target` column (0/1), we will evaluate metrics on it.\n"
-    "- If no `target` column, we will only show predictions and a downloadable `predictions.csv`.",
-    type=["csv"]
+# ---------- File uploader (your chosen text) ----------
+uploaded = st.file_uploader("Upload test CSV", type=["csv"])
+
+st.markdown(
+    "- ✅ CSV **with** a **target** column → full evaluation (metrics)\n"
+    "- 🔎 CSV **without** **target** → predictions only + **predictions.csv** download"
 )
 
 # Read uploaded file ONCE and reuse
@@ -81,8 +80,7 @@ if uploaded is not None:
         st.stop()
 
     try:
-        # Always rewind before first read (some browsers may set pointer to non-zero)
-        uploaded.seek(0)
+        uploaded.seek(0)  # always rewind before first read
         uploaded_df = pd.read_csv(uploaded)
     except pd.errors.EmptyDataError:
         st.error("No columns or data found in the uploaded file. Please upload a valid CSV.")
