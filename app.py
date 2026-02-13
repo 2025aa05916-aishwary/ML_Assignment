@@ -1,6 +1,8 @@
 # app.py
 import os
 from typing import Optional
+import io
+
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -69,31 +71,49 @@ uploaded = st.file_uploader(
     type=["csv"]
 )
 
+# Read uploaded file ONCE and reuse
+uploaded_df = None
+has_target = False
+if uploaded is not None:
+    # Guard: truly empty file
+    if getattr(uploaded, "size", None) == 0:
+        st.error("The uploaded file is empty. Please select a non-empty CSV.")
+        st.stop()
+
+    try:
+        # Always rewind before first read (some browsers may set pointer to non-zero)
+        uploaded.seek(0)
+        uploaded_df = pd.read_csv(uploaded)
+    except pd.errors.EmptyDataError:
+        st.error("No columns or data found in the uploaded file. Please upload a valid CSV.")
+        st.stop()
+    except Exception as e:
+        st.error(f"Could not read the uploaded CSV: {e}")
+        st.stop()
+
+    has_target = "target" in uploaded_df.columns
+
 # ---------- Train & evaluate on default holdout ----------
 cols, results, fitted, (X_test, y_test) = run_experiment(
     test_size=float(test_size), random_state=int(seed), mnb=bool(use_mnb)
 )
 
-# ---------- Handle uploaded CSV (align columns, optional eval) ----------
-if uploaded is not None:
-    try:
-        test_df = pd.read_csv(uploaded)
-        has_target = "target" in test_df.columns
-        X_aligned = test_df.reindex(columns=cols, fill_value=0)
-        st.success(f"Custom CSV loaded. Columns aligned to model features ({len(cols)}).")
+# ---------- If uploaded CSV present: align columns and, if available, use target ----------
+if uploaded_df is not None:
+    # Align by feature names; fill missing with 0
+    X_aligned = uploaded_df.reindex(columns=cols, fill_value=0)
+    st.success(f"Custom CSV loaded. Columns aligned to model features ({len(cols)}).")
 
-        if has_target:
-            y_uploaded = test_df["target"]
-            X_test = X_aligned
-            y_test = y_uploaded
+    with st.expander("Preview: uploaded (aligned) features"):
+        st.dataframe(X_aligned.head(), use_container_width=True)
 
-        with st.expander("Preview: uploaded (aligned) features"):
-            st.dataframe(X_aligned.head(), use_container_width=True)
+    if has_target:
+        # Use user-supplied labels for evaluation
+        y_uploaded = uploaded_df["target"]
+        X_test = X_aligned
+        y_test = y_uploaded
 
-    except Exception as e:
-        st.error(f"Failed to parse CSV: {e}")
-
-# ---------- Evaluate all models on current test set ----------
+# ---------- Evaluate all models on current test set (holdout or uploaded) ----------
 from collections import OrderedDict
 eval_results = OrderedDict()
 for name, mdl in fitted.items():
@@ -162,14 +182,15 @@ if sel_bytes:
     )
 
 # ---------- Predictions if uploaded CSV has NO target ----------
-if uploaded is not None and "target" not in pd.read_csv(uploaded, nrows=1).columns:
+if uploaded_df is not None and not has_target:
     st.subheader("Predictions (best model) for uploaded CSV (no target provided)")
     mdl = fitted[best_name]
-    uploaded_full = pd.read_csv(uploaded)
-    X_aligned = uploaded_full.reindex(columns=cols, fill_value=0)
+
+    # Reuse the already-read & aligned frame
+    X_aligned = uploaded_df.reindex(columns=cols, fill_value=0)
     y_pred = mdl.predict(X_aligned)
 
-    preds_df = uploaded_full.copy()
+    preds_df = uploaded_df.copy()
     preds_df["prediction"] = y_pred
     if hasattr(mdl, "predict_proba"):
         try:
