@@ -1,4 +1,4 @@
-# train_and_evaluate.py
+# model/train_and_evaluate.py
 from __future__ import annotations
 
 import os
@@ -120,7 +120,7 @@ def evaluate_model(model, X_test, y_test) -> EvaluationResult:
 
 def ensure_dirs():
     Path("data").mkdir(parents=True, exist_ok=True)
-    Path("models").mkdir(parents=True, exist_ok=True)
+    Path("model/saved").mkdir(parents=True, exist_ok=True)
 
 
 def make_test_csv(X: pd.DataFrame, y: pd.Series, n_rows: int = 50):
@@ -137,7 +137,7 @@ def make_test_csv(X: pd.DataFrame, y: pd.Series, n_rows: int = 50):
     return p1, p2
 
 
-def save_model_pkl(model, out_path: str = "models/best_model.pkl") -> str:
+def save_model_pkl(model, out_path: str = "model/saved/best_model.pkl") -> str:
     ensure_dirs()
     joblib.dump(model, out_path)
     return out_path
