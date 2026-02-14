@@ -15,14 +15,6 @@ This project addresses the problem of classifying breast cancer as either benign
 6. XGBoost (Ensemble)
 
 ### Comparison Table (auto‑generated in app)
-| ML Model Name | Accuracy | AUC | Precision | Recall | F1 | MCC |
-|---|---:|---:|---:|---:|---:|---:|
-| Logistic Regression |  |  |  |  |  |  |
-| Decision Tree |  |  |  |  |  |  |
-| kNN |  |  |  |  |  |  |
-| Naive Bayes |  |  |  |  |  |  |
-| Random Forest (Ensemble) |  |  |  |  |  |  |
-| XGBoost (Ensemble) |  |  |  |  |  |  |
 
 ML Model Name	Accuracy	AUC	Precision	Recall	F1	MCC
 Logistic Regression	0.982456	0.99537	0.986111	0.986111	0.986111	0.962302
@@ -35,39 +27,15 @@ XGBoost (Ensemble)	0.95614	0.99504	0.946667	0.986111	0.965986	0.905824
 
 
 ## Observations (fill after running)
-| ML Model Name | Observation about model performance |
-|---|---|
-| Logistic Regression | |
-| Decision Tree | |
-| kNN | |
-| Naive Bayes | |
-| Random Forest (Ensemble) | |
-| XGBoost (Ensemble) | |
 
-## Repository Structure
-```
-project/
-├── app.py
-├── requirements.txt
-├── README.md
-└── model/
-    └── train_and_evaluate.py
-```
+ML Model Name	Observation about model performance
+Logistic Regression	Achieved very high accuracy and AUC, indicating excellent overall performance and discrimination ability.
+Decision Tree	Exhibited decent performance but lower than other models, potentially prone to overfitting if not properly pruned or tuned.
+kNN	Demonstrated perfect recall, meaning it correctly identified all positive cases, with strong overall accuracy. However, precision is slightly lower.
+Naive Bayes	Showed good performance across metrics, particularly a high AUC, suggesting good separability between classes.
+Random Forest (Ensemble)	Provided strong and consistent performance across all metrics, benefiting from the ensemble approach to reduce variance.
+XGBoost (Ensemble)	Achieved excellent and balanced performance with high AUC and F1 score, making it one of the top-performing models in this comparison.
+<img width="958" height="233" alt="image" src="https://github.com/user-attachments/assets/6acef2a2-b393-4d6a-b08b-e93f308a5f14" />
 
-## How to Run Locally
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-streamlit run app.py
-```
 
-## Streamlit Deployment (Community Cloud)
-1. Push this repo to GitHub.
-2. Go to https://streamlit.io/cloud → **New app**.
-3. Select the repo, branch (main), and `app.py`. Click **Deploy**.
 
-## Notes
-- The app allows uploading **test CSV** (only) due to free‑tier resource limits.
-- AUC may show `NaN` when a model cannot compute probabilities.
-- MCC is computed for all models.
