@@ -35,6 +35,8 @@ kNN	Demonstrated perfect recall, meaning it correctly identified all positive ca
 Naive Bayes	Showed good performance across metrics, particularly a high AUC, suggesting good separability between classes.
 Random Forest (Ensemble)	Provided strong and consistent performance across all metrics, benefiting from the ensemble approach to reduce variance.
 XGBoost (Ensemble)	Achieved excellent and balanced performance with high AUC and F1 score, making it one of the top-performing models in this comparison.
+<img width="958" height="378" alt="image" src="https://github.com/user-attachments/assets/ea466b39-5d1e-4914-9e8f-d270a097d358" />
+
 
 
 
