@@ -31,32 +31,31 @@ def _read_bytes(path: str) -> Optional[bytes]:
 def _format_classification_report(report_dict: Dict[str, Any]) -> pd.DataFrame:
     """
     Turn sklearn classification_report(output_dict=True) into a tidy DataFrame.
-    Keeps class rows first, then averages and accuracy at the bottom.
+    Keeps class rows first, then micro/macro/weighted averages, then accuracy.
     """
     df = pd.DataFrame(report_dict).T.reset_index().rename(columns={"index": "label"})
-    # Move accuracy row to the bottom (it has only 'precision' filled as accuracy in sklearn)
-    # Ensure consistent column order even when some metrics are missing
-    want_cols = ["label", "precision", "recall", "f1-score", "support"]
-    for c in want_cols:
+    # Ensure consistent columns
+    desired_cols = ["label", "precision", "recall", "f1-score", "support"]
+    for c in desired_cols:
         if c not in df.columns:
             df[c] = np.nan
-    # Make label order: class rows (those which are numeric or not containing 'avg'/'accuracy'),
-    # then macro avg, weighted avg, micro avg (if present), then accuracy
-    def _is_avg(x): return any(k in x for k in ["avg", "accuracy"])
-    class_rows = df[~df["label"].apply(_is_avg)]
-    other_rows = df[df["label"].apply(_is_avg)]
 
-    # Custom order: micro avg, macro avg, weighted avg, accuracy
+    # split class rows vs agg rows
+    def _is_agg(lbl: str) -> bool:
+        return lbl in ("accuracy", "macro avg", "micro avg", "weighted avg")
+
+    class_rows = df[~df["label"].apply(_is_agg)]
+    agg_rows = df[df["label"].apply(_is_agg)].copy()
     order_map = {"micro avg": 0, "macro avg": 1, "weighted avg": 2, "accuracy": 3}
-    other_rows["order"] = other_rows["label"].map(order_map).fillna(99)
-    other_rows = other_rows.sort_values("order").drop(columns=["order"])
+    agg_rows["order"] = agg_rows["label"].map(order_map).fillna(99)
+    agg_rows = agg_rows.sort_values("order").drop(columns=["order"])
 
-    tidy = pd.concat([class_rows, other_rows], axis=0, ignore_index=True)
-    # Nice numeric formatting
+    out = pd.concat([class_rows, agg_rows], ignore_index=True)
+    # Cast types & format
     for c in ["precision", "recall", "f1-score"]:
-        tidy[c] = pd.to_numeric(tidy[c], errors="coerce")
-    tidy["support"] = pd.to_numeric(tidy["support"], errors="coerce").astype("Int64")
-    return tidy[want_cols]
+        out[c] = pd.to_numeric(out[c], errors="coerce")
+    out["support"] = pd.to_numeric(out["support"], errors="coerce").astype("Int64")
+    return out[desired_cols]
 
 def _download_button_df(df: pd.DataFrame, label: str, filename: str, help_text: str = ""):
     st.download_button(
@@ -73,7 +72,7 @@ X, y = load_dataset()
 ensure_dirs()
 p_feat, p_feat_target = make_test_csv(pd.DataFrame(X), y, n_rows=50)
 
-# ---------- Config controls (MAIN area; no sidebar) ----------
+# ---------- Configuration (MAIN area; no sidebar) ----------
 st.subheader("Configuration")
 c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
 with c1:
@@ -89,7 +88,7 @@ with c4:
         index=0
     )
 
-# Quick downloads in main
+# Quick downloads (main)
 with st.expander("⬇️ Quick downloads"):
     b1 = _read_bytes(p_feat)
     b2 = _read_bytes(p_feat_target)
@@ -125,12 +124,11 @@ st.markdown(
 uploaded_df = None
 has_target = False
 if uploaded is not None:
-    # Guard: truly empty file
     if getattr(uploaded, "size", None) == 0:
         st.error("The uploaded file is empty. Please select a non-empty CSV.")
         st.stop()
     try:
-        uploaded.seek(0)  # always rewind before first read
+        uploaded.seek(0)
         uploaded_df = pd.read_csv(uploaded)
     except pd.errors.EmptyDataError:
         st.error("No columns or data found in the uploaded file. Please upload a valid CSV.")
@@ -147,13 +145,11 @@ cols, results, fitted, (X_test, y_test) = run_experiment(
 
 # ---------- If uploaded CSV present: align columns and, if available, use target ----------
 if uploaded_df is not None:
-    # Align by feature names; fill missing with 0
     X_aligned = uploaded_df.reindex(columns=cols, fill_value=0)
     st.success(f"Custom CSV loaded. Columns aligned to model features ({len(cols)}).")
     with st.expander("Preview: uploaded (aligned) features"):
         st.dataframe(X_aligned.head(), use_container_width=True)
     if has_target:
-        # Use user-supplied labels for evaluation
         y_uploaded = uploaded_df["target"]
         X_test = X_aligned
         y_test = y_uploaded
@@ -174,8 +170,8 @@ with tab_overview:
     # Best model & selector
     best_name = pick_best_model(eval_results, metric=best_metric)
     st.success(f"🏅 Best model by **{best_metric}**: **{best_name}**")
-    # Small KPI strip for the best model
     res_best = eval_results[best_name]
+    # KPI strip
     k1, k2, k3, k4, k5, k6 = st.columns(6)
     k1.metric("Accuracy", f"{res_best.metrics.get('Accuracy', np.nan):.4f}")
     k2.metric("AUC", f"{res_best.metrics.get('AUC', np.nan):.4f}")
@@ -200,15 +196,13 @@ with tab_compare:
 
 with tab_detail:
     st.subheader("Detailed View")
-    choice = st.selectbox(
-        "Inspect model",
-        list(eval_results.keys()),
-        index=list(eval_results.keys()).index(pick_best_model(eval_results, metric=best_metric))
-    )
+    # Default to current best in the selector
+    default_idx = list(eval_results.keys()).index(pick_best_model(eval_results, metric=best_metric))
+    choice = st.selectbox("Inspect model", list(eval_results.keys()), index=default_idx)
     res = eval_results[choice]
 
+    # ---- Left: Confusion Matrix ----
     col1, col2 = st.columns(2, gap="large")
-
     with col1:
         st.markdown("**Confusion Matrix**")
         fig, ax = plt.subplots()
@@ -217,27 +211,25 @@ with tab_detail:
         ax.set_ylabel("True")
         st.pyplot(fig)
 
+    # ---- Right: Classification Report (robust) ----
     with col2:
         st.markdown("**Classification Report**")
-        # Build a neat table from sklearn's text/structure if available
-        report_df = None
-        if hasattr(res, "report_dict") and isinstance(res.report_dict, dict):
-            report_df = _format_classification_report(res.report_dict)
-        else:
-            # Fallback: parse from text if only string provided
-            try:
-                from sklearn.metrics import classification_report
-                # Recompute to ensure we have output_dict
-                # (We don't know the model's classes ordering from res; recompute safe)
-                y_pred_tmp = res.y_pred if hasattr(res, "y_pred") else None
-                # If res doesn't store y_pred, recompute from fitted model:
-                # Find selected model and recompute:
-                mdl = fitted[choice]
-                y_pred_tmp = mdl.predict(X_test)
-                rep_dict = classification_report(y_test, y_pred_tmp, output_dict=True, zero_division=0)
-                report_df = _format_classification_report(rep_dict)
-            except Exception:
-                report_df = pd.DataFrame({"message": ["Could not build report table"]})
+        # Robust recompute to guarantee a table
+        from sklearn.metrics import classification_report
+
+        mdl = fitted[choice]
+        try:
+            y_pred = mdl.predict(X_test)
+            rep_dict = classification_report(
+                y_test, y_pred, output_dict=True, zero_division=0
+            )
+            report_df = _format_classification_report(rep_dict)
+        except Exception as e:
+            report_df = pd.DataFrame(
+                {"label": ["error"], "precision": [np.nan], "recall": [np.nan],
+                 "f1-score": [np.nan], "support": [np.nan]}
+            )
+            st.warning(f"Could not build report table: {e}")
 
         st.dataframe(
             report_df.style.format({"precision": "{:.4f}", "recall": "{:.4f}", "f1-score": "{:.4f}"}),
@@ -246,11 +238,11 @@ with tab_detail:
         _download_button_df(report_df, "Download classification_report.csv", "classification_report.csv")
 
 with st.expander("💾 Model files & downloads"):
-    # Save & download models
     ensure_dirs()
     best_name_for_file = pick_best_model(eval_results, metric=best_metric)
     best_model_path = save_model_pkl(fitted[best_name_for_file], out_path="model/saved/best_model.pkl")
     best_bytes = _read_bytes(best_model_path)
+
     cdl1, cdl2 = st.columns(2)
     with cdl1:
         if best_bytes:
@@ -263,13 +255,11 @@ with st.expander("💾 Model files & downloads"):
             )
     with cdl2:
         if st.button("Save selected model as .pkl"):
-            # Use current selected choice if user visited Detailed View; otherwise default best
             choice_for_save = 'choice' in locals() and choice or best_name_for_file
             safe = "".join(c for c in choice_for_save if c.isalnum() or c in ("_", "-")).strip("_-")
             sel_path = save_model_pkl(fitted[choice_for_save], out_path=f"model/saved/{safe}.pkl")
             st.success(f"Saved: {sel_path}")
 
-    # Expose selected model download if present
     choice_for_download = 'choice' in locals() and choice or best_name_for_file
     sel_safe = "".join(c for c in choice_for_download if c.isalnum() or c in ("_", "-")).strip("_-")
     sel_bytes = _read_bytes(f"model/saved/{sel_safe}.pkl")
@@ -283,11 +273,9 @@ with st.expander("💾 Model files & downloads"):
         )
 
 with tab_preds:
-    # Predictions if uploaded CSV has NO target
     if uploaded_df is not None and not has_target:
         st.subheader("Predictions (best model) for uploaded CSV (no target provided)")
         mdl = fitted[pick_best_model(eval_results, metric=best_metric)]
-        # Reuse the already-read & aligned frame
         X_aligned = uploaded_df.reindex(columns=cols, fill_value=0)
         y_pred = mdl.predict(X_aligned)
         preds_df = uploaded_df.copy()
@@ -295,7 +283,9 @@ with tab_preds:
         if hasattr(mdl, "predict_proba"):
             try:
                 proba = mdl.predict_proba(X_aligned)
-                preds_df["prob_1"] = proba[:, 1] if proba.ndim == 2 and proba.shape[1] == 2 else np.nan
+                preds_df["prob_1"] = (
+                    proba[:, 1] if proba.ndim == 2 and proba.shape[1] == 2 else np.nan
+                )
             except Exception:
                 pass
         st.dataframe(preds_df.head(), use_container_width=True)
