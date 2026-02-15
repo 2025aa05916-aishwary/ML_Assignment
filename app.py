@@ -28,33 +28,56 @@ def _read_bytes(path: str) -> Optional[bytes]:
             return f.read()
     return None
 
-def _format_classification_report(report_dict: Dict[str, Any]) -> pd.DataFrame:
+def _format_classification_report(report_dict: Dict[str, Any], n_samples: Optional[int] = None) -> pd.DataFrame:
     """
     Turn sklearn classification_report(output_dict=True) into a tidy DataFrame.
     Keeps class rows first, then micro/macro/weighted averages, then accuracy.
+    Robust handling of 'support' so we never fail casting.
     """
     df = pd.DataFrame(report_dict).T.reset_index().rename(columns={"index": "label"})
-    # Ensure consistent columns
+
+    # Ensure consistent columns exist
     desired_cols = ["label", "precision", "recall", "f1-score", "support"]
     for c in desired_cols:
         if c not in df.columns:
             df[c] = np.nan
 
-    # split class rows vs agg rows
-    def _is_agg(lbl: str) -> bool:
-        return lbl in ("accuracy", "macro avg", "micro avg", "weighted avg")
+    # If 'accuracy' row exists, set its support to total samples (or NA if unknown)
+    if "accuracy" in df["label"].values:
+        idx = df.index[df["label"] == "accuracy"]
+        if len(idx) > 0:
+            if n_samples is not None:
+                df.loc[idx, "support"] = n_samples
+            else:
+                # Leave as NA; we will handle dtype below
+                df.loc[idx, "support"] = np.nan
 
-    class_rows = df[~df["label"].apply(_is_agg)]
-    agg_rows = df[df["label"].apply(_is_agg)].copy()
+    # Split class rows vs aggregation rows
+    agg_labels = ("accuracy", "macro avg", "micro avg", "weighted avg")
+    class_rows = df[~df["label"].isin(agg_labels)]
+    agg_rows = df[df["label"].isin(agg_labels)].copy()
+
+    # Order aggregation rows
     order_map = {"micro avg": 0, "macro avg": 1, "weighted avg": 2, "accuracy": 3}
     agg_rows["order"] = agg_rows["label"].map(order_map).fillna(99)
     agg_rows = agg_rows.sort_values("order").drop(columns=["order"])
 
     out = pd.concat([class_rows, agg_rows], ignore_index=True)
-    # Cast types & format
+
+    # Numeric conversions
     for c in ["precision", "recall", "f1-score"]:
         out[c] = pd.to_numeric(out[c], errors="coerce")
-    out["support"] = pd.to_numeric(out["support"], errors="coerce").astype("Int64")
+
+    # Handle 'support' safely:
+    # 1) convert to numeric
+    support_num = pd.to_numeric(out["support"], errors="coerce")
+    # 2) keep only integer-like values as Int64, others become <NA>
+    #    integer-like means the value is finite and has zero fractional part
+    is_integer_like = np.isfinite(support_num) & (np.floor(support_num) == support_num)
+    support_int = pd.Series(pd.NA, index=out.index, dtype="Int64")
+    support_int[is_integer_like] = support_num[is_integer_like].astype("Int64")
+    out["support"] = support_int
+
     return out[desired_cols]
 
 def _download_button_df(df: pd.DataFrame, label: str, filename: str, help_text: str = ""):
@@ -163,7 +186,7 @@ for name, mdl in fitted.items():
 
 # ---------- TABS ----------
 tab_overview, tab_compare, tab_detail, tab_preds = st.tabs(
-    ["Overview", "Model Comparison", "Detailed View", "Predictions"]
+    ["Overview", "Evaluation Metrics", "Detailed View", "Predictions"]
 )
 
 with tab_overview:
@@ -171,7 +194,8 @@ with tab_overview:
     best_name = pick_best_model(eval_results, metric=best_metric)
     st.success(f"🏅 Best model by **{best_metric}**: **{best_name}**")
     res_best = eval_results[best_name]
-    # KPI strip
+    # KPI strip titled Evaluation Metrics
+    st.markdown("### Evaluation Metrics")
     k1, k2, k3, k4, k5, k6 = st.columns(6)
     k1.metric("Accuracy", f"{res_best.metrics.get('Accuracy', np.nan):.4f}")
     k2.metric("AUC", f"{res_best.metrics.get('AUC', np.nan):.4f}")
@@ -181,7 +205,7 @@ with tab_overview:
     k6.metric("MCC", f"{res_best.metrics.get('MCC', np.nan):.4f}")
 
 with tab_compare:
-    st.subheader("Comparison Table – Metrics")
+    st.subheader("Evaluation Metrics")
     rows = []
     for name, res in eval_results.items():
         row = {"ML Model Name": name}
@@ -196,13 +220,12 @@ with tab_compare:
 
 with tab_detail:
     st.subheader("Detailed View")
-    # Default to current best in the selector
     default_idx = list(eval_results.keys()).index(pick_best_model(eval_results, metric=best_metric))
     choice = st.selectbox("Inspect model", list(eval_results.keys()), index=default_idx)
     res = eval_results[choice]
 
-    # ---- Left: Confusion Matrix ----
     col1, col2 = st.columns(2, gap="large")
+
     with col1:
         st.markdown("**Confusion Matrix**")
         fig, ax = plt.subplots()
@@ -211,23 +234,22 @@ with tab_detail:
         ax.set_ylabel("True")
         st.pyplot(fig)
 
-    # ---- Right: Classification Report (robust) ----
     with col2:
         st.markdown("**Classification Report**")
-        # Robust recompute to guarantee a table
+        # Always recompute safely to guarantee a table
         from sklearn.metrics import classification_report
-
         mdl = fitted[choice]
         try:
             y_pred = mdl.predict(X_test)
             rep_dict = classification_report(
                 y_test, y_pred, output_dict=True, zero_division=0
             )
-            report_df = _format_classification_report(rep_dict)
+            n_samples = len(y_test) if y_test is not None else None
+            report_df = _format_classification_report(rep_dict, n_samples=n_samples)
         except Exception as e:
             report_df = pd.DataFrame(
                 {"label": ["error"], "precision": [np.nan], "recall": [np.nan],
-                 "f1-score": [np.nan], "support": [np.nan]}
+                 "f1-score": [np.nan], "support": [pd.NA]}
             )
             st.warning(f"Could not build report table: {e}")
 
