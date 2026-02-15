@@ -1,4 +1,4 @@
-# End‑to‑End Classification – ML Assignment 2
+# End‑to‑End Classification – ML Assignment
 
 ## Problem Statement
 This project addresses the problem of classifying breast cancer as either benign or malignant based on various cell nucleus characteristics. Early and accurate diagnosis is crucial for effective treatment, making this a critical application of machine learning.
@@ -14,7 +14,7 @@ This project addresses the problem of classifying breast cancer as either benign
 5. Random Forest (Ensemble)  
 6. XGBoost (Ensemble)
 
-### Comparison Table (auto‑generated in app)
+### Comparison Table
 
 ML Model Name	Accuracy	AUC	Precision	Recall	F1	MCC
 Logistic Regression	0.982456	0.99537	0.986111	0.986111	0.986111	0.962302
@@ -26,7 +26,7 @@ XGBoost (Ensemble)	0.95614	0.99504	0.946667	0.986111	0.965986	0.905824
 <img width="790" height="204" alt="image" src="https://github.com/user-attachments/assets/75c15bd7-9678-4b9b-bcd2-12e24256c717" />
 
 
-## Observations (fill after running)
+## Observations
 
 ML Model Name	Observation about model performance
 Logistic Regression	Achieved very high accuracy and AUC, indicating excellent overall performance and discrimination ability.
