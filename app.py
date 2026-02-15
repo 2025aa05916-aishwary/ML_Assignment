@@ -15,10 +15,11 @@ from model.train_and_evaluate import (
 # ---------- Page config ----------
 st.set_page_config(page_title="ML Assignment 2 – Classification Bench", layout="wide")
 st.title("ML Assignment 2 – End‑to‑End Classification App")
+
 st.markdown(
     "This app trains **six classifiers** on the Breast Cancer Wisconsin dataset, "
-    "compares metrics, lets you **upload a test CSV**, and **download** a single full "
-    "test CSV (features only, 569 rows) and the **best model (.pkl)**."
+    "compares metrics, lets you **upload a test CSV**, and provides one clear option to "
+    "**download a full test CSV (features only, 569 rows)**. You can also save and download models."
 )
 
 # ---------- Helpers ----------
@@ -88,37 +89,43 @@ def _download_button_df(df: pd.DataFrame, label: str, filename: str, help_text: 
 # ---------- Load data ----------
 X, y = load_dataset()
 
-# ---------- Configuration (MAIN area; no sidebar) ----------
-st.subheader("Configuration")
-c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
-with c1:
-    seed = st.number_input("Random seed", value=42, step=1)
-with c2:
-    test_size = st.slider("Test size", min_value=0.1, max_value=0.4, value=0.2, step=0.05)
-with c3:
-    use_mnb = st.checkbox("Use MultinomialNB (for count features)", value=False)
-with c4:
-    best_metric = st.selectbox(
-        "Pick best model by metric",
-        ["AUC", "F1", "Accuracy", "Precision", "Recall", "MCC"],
-        index=0
-    )
-
-# ---------- Dataset preview ----------
-st.subheader("Dataset snapshot")
-st.dataframe(pd.DataFrame(X).head(), use_container_width=True)
-st.caption(f"Instances: {pd.DataFrame(X).shape[0]} • Features: {pd.DataFrame(X).shape[1]}")
-
-# ---------- Sidebar: single full features-only CSV download ----------
+# ---------- Single full CSV download (main page) ----------
+st.subheader("Download")
 full_features_csv_bytes = pd.DataFrame(X).to_csv(index=False).encode("utf-8")
-st.sidebar.subheader("⬇️ Download Test CSV")
-st.sidebar.download_button(
+st.download_button(
     "Download FULL test_data.csv (569 rows)",
     data=full_features_csv_bytes,
     file_name="test_data_full.csv",
     mime="text/csv",
     use_container_width=True
 )
+
+# ---------- Configuration (all on main page, no sliders) ----------
+st.subheader("Configuration")
+c1, c2, c3 = st.columns([1, 1, 2])
+with c1:
+    seed = st.number_input("Random seed", value=42, step=1)
+with c2:
+    # Accept a float directly instead of a slider; clamp later
+    test_size = st.number_input("Test size (0.10–0.40)", value=0.20, step=0.05, format="%.2f")
+with c3:
+    use_mnb = st.checkbox("Use MultinomialNB (for count features)", value=False)
+
+# Sanitize test_size bounds
+if test_size < 0.10 or test_size > 0.40:
+    st.warning("Test size adjusted to the valid range [0.10, 0.40].")
+test_size = float(min(max(test_size, 0.10), 0.40))
+
+best_metric = st.selectbox(
+    "Pick best model by metric",
+    ["AUC", "F1", "Accuracy", "Precision", "Recall", "MCC"],
+    index=0
+)
+
+# ---------- Dataset preview ----------
+st.subheader("Dataset snapshot")
+st.dataframe(pd.DataFrame(X).head(), use_container_width=True)
+st.caption(f"Instances: {pd.DataFrame(X).shape[0]} • Features: {pd.DataFrame(X).shape[1]}")
 
 # ---------- File uploader ----------
 uploaded = st.file_uploader("Upload test CSV", type=["csv"])
@@ -243,6 +250,7 @@ with tab_detail:
         )
         _download_button_df(report_df, "Download classification_report.csv", "classification_report.csv")
 
+# ---------- Model files & downloads (main page expander) ----------
 with st.expander("💾 Model files & downloads"):
     ensure_dirs()
     best_name_for_file = pick_best_model(eval_results, metric=best_metric)
@@ -278,7 +286,8 @@ with st.expander("💾 Model files & downloads"):
             use_container_width=True
         )
 
-with tab_preds:
+# ---------- Predictions if uploaded CSV has NO target ----------
+with st.container():
     if uploaded_df is not None and not has_target:
         st.subheader("Predictions (best model) for uploaded CSV (no target provided)")
         mdl = fitted[pick_best_model(eval_results, metric=best_metric)]
@@ -305,5 +314,7 @@ with tab_preds:
             mime="text/csv",
             use_container_width=True
         )
+    elif uploaded is not None and has_target:
+        st.info("You uploaded a CSV with `target`. The app above shows evaluation results based on your file.")
     else:
         st.info("Upload a CSV **without** a `target` column to get prediction outputs here.")
